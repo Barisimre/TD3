@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-data = np.load("latent.npy")
+data = np.load("Latents/InvertedPendulum-v2_17:29:32.134576.npy")
 
-fig = plt.figure()
+fig = plt.figure(1)
 ax = fig.add_subplot(111, projection='3d')
 
 xs = []
@@ -20,5 +20,8 @@ for i in data:
     zs.append(i[1])
 ax.scatter(xs, ys, zs, marker='o')
 
+plt.title('Center Title')
+
 
 plt.show()
+
