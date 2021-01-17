@@ -31,7 +31,7 @@ plt.legend()
 
 
 
-plt.xlabel('Episodes Count')
+plt.xlabel('Episodes Count', fontsize=30)
 plt.ylabel('Reward per Episode')
 
 # TODO: label the data

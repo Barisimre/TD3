@@ -16,7 +16,7 @@ LATENT_SIZE = 3
 LEARNING_RATE = 0.001
 BUFFER_SIZE = BATCH_SIZE
 TRAIN_TO_TEST = 0.9
-C = 0.01
+C = 0
 
 # Env sizes
 state_dim = 4
@@ -56,6 +56,8 @@ class GenerativeReplay:
             self.i = 0
             self.train()
             self.test()
+            return True
+        return False
 
 
 

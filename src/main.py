@@ -45,6 +45,7 @@ if __name__ == "__main__":
 	# General
 	USE_GENERATIVE = True
 	NO_REPLAY = False
+	RECORD_TRAINING_TIMES = False
 	ENV = "InvertedPendulum-v2"
 	START_TIMESTEPS = 15e3
 	END = START_TIMESTEPS + 50e3
@@ -52,6 +53,8 @@ if __name__ == "__main__":
 	MAX_TIMESTEPS = 2e5
 	SEED = 13
 	FILE_NAME = ENV + "_" + list(str(datetime.now()).split())[-1]
+	FROZEN = False
+	MILESTONES = 40
 
 	# TD3 parameters
 	EXPL_NOISE = 0.1
@@ -102,6 +105,8 @@ if __name__ == "__main__":
 		replay_component = utils.ReplayBuffer(state_dim, action_dim, BATCH_SIZE)
 	else:
 		replay_component = utils.ReplayBuffer(state_dim, action_dim)
+
+	training_moments = []
 	
 
 	# Evaluate untrained policy
@@ -125,6 +130,7 @@ if __name__ == "__main__":
 		# Select action randomly or according to policy based on the start timesteps
 		if t < START_TIMESTEPS:
 			action = env.action_space.sample()
+			episode_num = 0
 		else:
 			replay_component.training = True
 			action = (
@@ -138,13 +144,17 @@ if __name__ == "__main__":
 
 		# Store data in replay component
 		# If the VAE reaches buffer max, it will train itself blocking this for a while
-		replay_component.add(state, action, next_state, reward, done_bool)
+		VAE_training = replay_component.add(state, action, next_state, reward, done_bool)
+		if VAE_training:
+			training_moments.append(episode_num)
 
 		state = next_state
 		episode_reward += reward
+		if episode_reward >= MILESTONES:
+			FROZEN = True
 
 		# Train agent after collecting sufficient data
-		if t >= START_TIMESTEPS:
+		if t >= START_TIMESTEPS and not FROZEN:
 			policy.train(replay_component, BATCH_SIZE)
 
 		if done: 
@@ -153,7 +163,9 @@ if __name__ == "__main__":
 			print(f"Total timesteps: {t},  Episode {episode_num} done, lasted {episode_timesteps} timesteps, total reward is {episode_reward}")
 			if t >= START_TIMESTEPS:
 				evaluations.append(episode_reward)
-				np.save(f"./results/incoming{FILE_NAME}", evaluations)
+				np.save(f"./results/incoming/{FILE_NAME}", evaluations)
+				if RECORD_TRAINING_TIMES:
+					np.save(f"./results/incoming/{FILE_NAME}_times", training_moments)
 
 			# Reset environment
 			state, done = env.reset(), False
@@ -161,7 +173,7 @@ if __name__ == "__main__":
 			episode_timesteps = 0
 			episode_num += 1 
 
-		# Evaluate episode
+		#  Evaluate episode
 		# if (t + 1) % EVAL_FREQ == 0:
 		# 	print(f"Total timesteps: {t}")
 		# 	if t >= START_TIMESTEPS:
