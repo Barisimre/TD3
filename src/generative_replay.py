@@ -40,6 +40,10 @@ class GenerativeReplay:
         self.i = 0
         torch.set_printoptions(precision=3, sci_mode=False, linewidth=240, profile=None)
 
+    def reset(self):
+        del self.model
+        self.__init__()
+
 
     # Add new experiences as they come
     def add(self, state, action, next_state, reward, done):

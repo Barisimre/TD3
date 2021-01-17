@@ -47,14 +47,15 @@ if __name__ == "__main__":
 	NO_REPLAY = False
 	RECORD_TRAINING_TIMES = False
 	ENV = "InvertedPendulum-v2"
-	START_TIMESTEPS = 15e3
+	START_TIMESTEPS = 10e3
 	END = START_TIMESTEPS + 50e3
 	EVAL_FREQ = 5e3
 	MAX_TIMESTEPS = 2e5
 	SEED = 13
 	FILE_NAME = ENV + "_" + list(str(datetime.now()).split())[-1]
-	FROZEN = False
-	MILESTONES = 40
+	FROZEN = 0
+	MILESTONES = [20, 30, 40, 50, 60, 70, 80, 90]
+	VAE_FROZEN = 0
 
 	# TD3 parameters
 	EXPL_NOISE = 0.1
@@ -144,23 +145,36 @@ if __name__ == "__main__":
 
 		# Store data in replay component
 		# If the VAE reaches buffer max, it will train itself blocking this for a while
-		VAE_training = replay_component.add(state, action, next_state, reward, done_bool)
+		if VAE_FROZEN == 0:
+			VAE_training = replay_component.add(state, action, next_state, reward, done_bool)
+		else:
+			VAE_FROZEN -= 1
 		if VAE_training:
 			training_moments.append(episode_num)
 
 		state = next_state
 		episode_reward += reward
-		if episode_reward >= MILESTONES:
-			FROZEN = True
+		if t >= START_TIMESTEPS and FROZEN == 0 and episode_reward >= MILESTONES[0]:
+			FROZEN = START_TIMESTEPS // 2
+			MILESTONES = MILESTONES[1:]
 
 		# Train agent after collecting sufficient data
-		if t >= START_TIMESTEPS and not FROZEN:
-			policy.train(replay_component, BATCH_SIZE)
+		if t >= START_TIMESTEPS:
+			if FROZEN == 0:
+				policy.train(replay_component, BATCH_SIZE)
+			else:
+				if FROZEN == 1:
+					VAE_FROZEN = 2000
+				FROZEN -= 1
+
 
 		if done: 
 			# +1 to account for 0 indexing. +0 on ep_timesteps since it will increment +1 even if done=True
 
-			print(f"Total timesteps: {t},  Episode {episode_num} done, lasted {episode_timesteps} timesteps, total reward is {episode_reward}")
+			if episode_reward < 4:
+				MILESTONES = [10, 20, 30, 40, 50, 60, 70, 80, 90]
+
+			print(f"Total timesteps: {t},  Episode {episode_num} done, lasted {episode_timesteps} timesteps, total reward is {episode_reward}, milestones {MILESTONES}, VAE {VAE_FROZEN}")
 			if t >= START_TIMESTEPS:
 				evaluations.append(episode_reward)
 				np.save(f"./results/incoming/{FILE_NAME}", evaluations)
