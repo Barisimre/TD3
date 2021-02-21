@@ -11,32 +11,6 @@ import DDPG
 from generative_replay import GenerativeReplay
 from datetime import datetime
 
-r_before = 0
-
-# Evaluate the policy with a new env
-def eval_policy(policy, env_name, seed, eval_episodes, replay, replay_component):
-	global r_before
-	eval_env = gym.make(env_name)
-	eval_env.seed(42)
-
-	avg_reward = 0.
-	for _ in range(eval_episodes):
-		state, done = eval_env.reset(), False
-		while not done:
-			old = state
-			action = policy.select_action(np.array(state))
-			state, reward, done, _ = eval_env.step(action)
-			avg_reward += reward
-
-
-	avg_reward /= eval_episodes
-
-	print("---------------------------------------")
-	print(f"Evaluation over {eval_episodes} episodes: {avg_reward:.3f}")
-	print("---------------------------------------")
-
-	return avg_reward
-
 
 if __name__ == "__main__":
 	
@@ -47,15 +21,18 @@ if __name__ == "__main__":
 	NO_REPLAY = False
 	RECORD_TRAINING_TIMES = False
 	ENV = "InvertedPendulum-v2"
-	START_TIMESTEPS = 10e3
+	START_TIMESTEPS = 15e3
 	END = START_TIMESTEPS + 50e3
 	EVAL_FREQ = 5e3
 	MAX_TIMESTEPS = 2e5
 	SEED = 13
-	FILE_NAME = ENV + "_" + list(str(datetime.now()).split())[-1]
-	FROZEN = 0
-	MILESTONES = [20, 30, 40, 50, 60, 70, 80, 90]
-	VAE_FROZEN = 0
+	# FILE_NAME = ENV + "_" + list(str(datetime.now()).split())[-1]
+	FILE_NAME = "a"
+	
+	F_TIME = 5000
+	VAE_F = 0
+	TD3_F = 0
+	MILESTONES = [8, 15, 20, 30, 40, 50, 60, 70, 80, 90]
 
 	# TD3 parameters
 	EXPL_NOISE = 0.1
@@ -65,6 +42,12 @@ if __name__ == "__main__":
 	POLICY_NOISE = 0.2
 	NOISE_CLIP = 0.5
 	POLICY_FREQ = 2
+
+	evaluations = []
+	td3times = []
+	vaetimes = []
+
+	running_av = 0
 	
 
 	print(f"Start new process with {ENV} and file name {FILE_NAME}")
@@ -110,9 +93,6 @@ if __name__ == "__main__":
 	training_moments = []
 	
 
-	# Evaluate untrained policy
-	evaluations = [eval_policy(policy, ENV, SEED, 10, replay_component, None)]
-
 	state, done = env.reset(), False
 	episode_reward = 0
 	episode_timesteps = 0
@@ -121,8 +101,9 @@ if __name__ == "__main__":
 
 	for t in range(int(MAX_TIMESTEPS)):
 
-
-		
+		if TD3_F > 0:
+			TD3_F -= 1
+	
 		episode_timesteps += 1
 
 		if t >= END:
@@ -144,37 +125,39 @@ if __name__ == "__main__":
 		done_bool = float(done) if episode_timesteps < env._max_episode_steps else 0
 
 		# Store data in replay component
-		# If the VAE reaches buffer max, it will train itself blocking this for a while
-		if VAE_FROZEN == 0:
-			VAE_training = replay_component.add(state, action, next_state, reward, done_bool)
-		else:
-			VAE_FROZEN -= 1
+
+		VAE_training = replay_component.add(state, action, next_state, reward, done_bool)
 		if VAE_training:
 			training_moments.append(episode_num)
 
 		state = next_state
 		episode_reward += reward
-		if t >= START_TIMESTEPS and FROZEN == 0 and episode_reward >= MILESTONES[0]:
-			FROZEN = START_TIMESTEPS // 2
-			MILESTONES = MILESTONES[1:]
+
 
 		# Train agent after collecting sufficient data
-		if t >= START_TIMESTEPS:
-			if FROZEN == 0:
-				policy.train(replay_component, BATCH_SIZE)
-			else:
-				if FROZEN == 1:
-					VAE_FROZEN = 2000
-				FROZEN -= 1
-
+		if t >= START_TIMESTEPS and TD3_F == 0:
+			policy.train(replay_component, BATCH_SIZE)
 
 		if done: 
-			# +1 to account for 0 indexing. +0 on ep_timesteps since it will increment +1 even if done=True
+			running_av = 0.4*running_av + 0.6*episode_reward
 
-			if episode_reward < 4:
-				MILESTONES = [10, 20, 30, 40, 50, 60, 70, 80, 90]
+			if t >= START_TIMESTEPS:
+				if running_av > MILESTONES[0] and TD3_F == 0:
+					MILESTONES = MILESTONES[1:]
+					TD3_F = F_TIME
+					td3times.append(episode_num)
+					np.save(f"./results/incoming/{FILE_NAME}_td3", td3times)
 
-			print(f"Total timesteps: {t},  Episode {episode_num} done, lasted {episode_timesteps} timesteps, total reward is {episode_reward}, milestones {MILESTONES}, VAE {VAE_FROZEN}")
+					VAE_F = 0
+
+
+				if running_av < 4:
+					MILESTONES = [8, 15, 20, 30, 40, 50, 60, 70, 80, 90]
+
+
+
+
+			print(f"Episode {episode_num}, reward is {episode_reward}, running average {running_av}, TD3 {TD3_F}, VAE {VAE_F}, {MILESTONES}")
 			if t >= START_TIMESTEPS:
 				evaluations.append(episode_reward)
 				np.save(f"./results/incoming/{FILE_NAME}", evaluations)
@@ -186,12 +169,3 @@ if __name__ == "__main__":
 			episode_reward = 0
 			episode_timesteps = 0
 			episode_num += 1 
-
-		#  Evaluate episode
-		# if (t + 1) % EVAL_FREQ == 0:
-		# 	print(f"Total timesteps: {t}")
-		# 	if t >= START_TIMESTEPS:
-		# 		evaluations.append(eval_policy(policy, ENV, SEED,20, replay_component, replay_component))
-		# 	else:
-		# 		evaluations.append(eval_policy(policy, ENV, SEED,20, replay_component, None))
-		# 	np.save(f"./results/td3/{FILE_NAME}", evaluations)
